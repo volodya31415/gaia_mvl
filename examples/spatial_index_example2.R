@@ -28,43 +28,51 @@ z_poi<-sin(dec*pi/180.0)
 
 cos_d<-cos(d*pi/180.0)
 
-# The spatial index uses 12 bits for each x, y and z coordinate, with resolution of 2^-11 rad
-# Construct a grid of query points with this resolution:
-N<- ceiling(d*pi/180/2^-11)
+make_search_grid<-function(ra, dec, d) {
+	# The spatial index uses 12 bits for each x, y and z coordinate, with resolution of 2^-11 rad
+	# Construct a grid of query points with this resolution:
+	N<- ceiling(d*pi/180/2^-11)
 
-steps<- ((-N):N)*2^-11
-x_grid<- rep(steps, 2*N+1)
-y_grid<- rep(steps, each=2*N+1)
-z_grid<- 1.0
+	steps<- ((-N):N)*2^-11
+	x_grid<- rep(steps, 2*N+1)
+	y_grid<- rep(steps, each=2*N+1)
+	z_grid<- 1.0
 
-norm<-1.0/sqrt(x_grid^2+y_grid^2+z_grid^2)
+	# Normalize
 
-x_grid<- x_grid*norm
-y_grid<- y_grid*norm
-z_grid<- z_grid*norm
+	norm<-1.0/sqrt(x_grid^2+y_grid^2+z_grid^2)
 
-# Rotate the grid so that (0, 0, 1) point becomes (x_poi, y_poi, z_poi)
+	x_grid<- x_grid*norm
+	y_grid<- y_grid*norm
+	z_grid<- z_grid*norm
 
-x_grid0<- x_grid*sin(dec*pi/180.0)+z_grid*cos(dec*pi/180.0)
-z_grid0<- -x_grid*cos(dec*pi/180.0)+z_grid*sin(dec*pi/180.0)
+	# Rotate the grid so that (0, 0, 1) point becomes (x_poi, y_poi, z_poi)
 
-x_grid<-x_grid0
-z_grid<-z_grid0
+	x_grid0<- x_grid*sin(dec*pi/180.0)+z_grid*cos(dec*pi/180.0)
+	z_grid0<- -x_grid*cos(dec*pi/180.0)+z_grid*sin(dec*pi/180.0)
 
-x_grid0<- x_grid*cos(ra*pi/180.0)-y_grid*sin(ra*pi/180.0)
-y_grid0<- x_grid*sin(ra*pi/180.0)+y_grid*cos(ra*pi/180.0)
+	x_grid<-x_grid0
+	z_grid<-z_grid0
 
-x_grid<-x_grid0
-y_grid<-y_grid0
+	x_grid0<- x_grid*cos(ra*pi/180.0)-y_grid*sin(ra*pi/180.0)
+	y_grid0<- x_grid*sin(ra*pi/180.0)+y_grid*cos(ra*pi/180.0)
+
+	x_grid<-x_grid0
+	y_grid<-y_grid0
+	
+	return(data.frame(x=x_grid, y=y_grid, z=z_grid))
+	}
 
 
 f_nearby<-function(i, idx) {
-	# Find nearby (on the sky) points to our point of interest
+	# Find points close to our point of interest
 	d<-x[idx]*x_poi+y[idx]*y_poi+z[idx]*z_poi
 	return(idx[d>= cos_d])
 	}
 
-nearby_indices<-sort(unique(do.call(c, mvl_index_lapply(Mci$coordinates_index, list(x_grid, y_grid, z_grid), f_nearby))))
+nearby_indices<-sort(unique(do.call(c, mvl_index_lapply(Mci$coordinates_index, make_search_grid(ra, dec, d), f_nearby))))
+
+cat("Found", length(nearby_indices), "points within", d, "degrees of ra=", ra, "dec=", dec, "\n")
 
 # Write out results in MVL and CSV formats
 
@@ -74,6 +82,8 @@ mvl_write_object(Mout, paste("Gaia sources near ra=", ra, "dec=", dec), name="de
 
 mvl_write_object(Mout, nearby_indices, name="point_index")
 
+# for d=0.1 the number of points is small, so we could have just as well got the data directly: M$gaia[nearby_indices, ]
+# However, mvl_indexed_copy() will be needed if the user modifies d to return much larger subset.
 mvl_indexed_copy(Mout, M["gaia", ref=TRUE], nearby_indices, name="gaia_subset")
 
 Mout<-mvl_remap(Mout)
@@ -84,5 +94,6 @@ write.table(df, "spatial_index_example2_output.csv", col.names=TRUE, row.names=F
 
 mvl_close(Mout)
 
+# Plot results:
 # plot(df[,"ra"], df[,"dec"])
 
